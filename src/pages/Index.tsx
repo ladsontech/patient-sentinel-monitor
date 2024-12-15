@@ -18,10 +18,15 @@ const generateHistoryPoint = () => ({
 
 const generatePatient = (id: number) => {
   const vitals = generateVitals();
-  const status = 
-    vitals.oxygenSaturation < 95 || vitals.heartRate > 90 ? "critical" :
-    vitals.oxygenSaturation < 97 || vitals.heartRate > 80 ? "warning" : 
-    "normal";
+  let status: "normal" | "warning" | "critical";
+  
+  if (vitals.oxygenSaturation < 95 || vitals.heartRate > 90) {
+    status = "critical";
+  } else if (vitals.oxygenSaturation < 97 || vitals.heartRate > 80) {
+    status = "warning";
+  } else {
+    status = "normal";
+  }
 
   return {
     id: `patient-${id}`,
@@ -44,10 +49,15 @@ const Index = () => {
       setPatients(prevPatients => 
         prevPatients.map(patient => {
           const newVitals = generateVitals();
-          const newStatus = 
-            newVitals.oxygenSaturation < 95 || newVitals.heartRate > 90 ? "critical" :
-            newVitals.oxygenSaturation < 97 || newVitals.heartRate > 80 ? "warning" : 
-            "normal";
+          let newStatus: "normal" | "warning" | "critical";
+          
+          if (newVitals.oxygenSaturation < 95 || newVitals.heartRate > 90) {
+            newStatus = "critical";
+          } else if (newVitals.oxygenSaturation < 97 || newVitals.heartRate > 80) {
+            newStatus = "warning";
+          } else {
+            newStatus = "normal";
+          }
 
           if (newStatus === "critical" && patient.status !== "critical") {
             toast({
