@@ -4,9 +4,9 @@ import { PatientDetail } from "@/components/PatientDetail";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { Database } from "@/integrations/supabase/types";
 
-// Types for our data
-interface Patient {
+type Patient = {
   id: string;
   name: string;
   room: string;
@@ -25,7 +25,7 @@ interface Patient {
     heartRate: number;
     respiratoryRate: number;
   }>;
-}
+};
 
 const fetchPatients = async (): Promise<Patient[]> => {
   const { data: patients, error } = await supabase
@@ -41,7 +41,7 @@ const fetchPatients = async (): Promise<Patient[]> => {
   
   if (historyError) throw historyError;
 
-  return patients.map(patient => ({
+  return (patients as Database['public']['Tables']['patients']['Row'][]).map(patient => ({
     id: patient.id,
     name: patient.name,
     room: patient.room,
@@ -53,10 +53,10 @@ const fetchPatients = async (): Promise<Patient[]> => {
       respiratoryRate: patient.respiratory_rate
     },
     status: patient.status,
-    history: history
+    history: (history as Database['public']['Tables']['patient_history']['Row'][])
       .filter(h => h.patient_id === patient.id)
       .map(h => ({
-        timestamp: new Date(h.timestamp).toLocaleTimeString(),
+        timestamp: new Date(h.timestamp!).toLocaleTimeString(),
         bloodPressure: h.blood_pressure,
         oxygenSaturation: h.oxygen_saturation,
         heartRate: h.heart_rate,

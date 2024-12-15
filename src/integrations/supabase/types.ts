@@ -9,7 +9,86 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      patient_history: {
+        Row: {
+          blood_pressure: number
+          heart_rate: number
+          id: string
+          oxygen_saturation: number
+          patient_id: string | null
+          respiratory_rate: number
+          timestamp: string | null
+        }
+        Insert: {
+          blood_pressure: number
+          heart_rate: number
+          id?: string
+          oxygen_saturation: number
+          patient_id?: string | null
+          respiratory_rate: number
+          timestamp?: string | null
+        }
+        Update: {
+          blood_pressure?: number
+          heart_rate?: number
+          id?: string
+          oxygen_saturation?: number
+          patient_id?: string | null
+          respiratory_rate?: number
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_history_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patients: {
+        Row: {
+          blood_pressure: number
+          created_at: string | null
+          heart_rate: number
+          id: string
+          name: string
+          oxygen_saturation: number
+          respiratory_rate: number
+          room: string
+          status: Database["public"]["Enums"]["patient_status"]
+          updated_at: string | null
+          ward: string
+        }
+        Insert: {
+          blood_pressure: number
+          created_at?: string | null
+          heart_rate: number
+          id?: string
+          name: string
+          oxygen_saturation: number
+          respiratory_rate: number
+          room: string
+          status?: Database["public"]["Enums"]["patient_status"]
+          updated_at?: string | null
+          ward: string
+        }
+        Update: {
+          blood_pressure?: number
+          created_at?: string | null
+          heart_rate?: number
+          id?: string
+          name?: string
+          oxygen_saturation?: number
+          respiratory_rate?: number
+          room?: string
+          status?: Database["public"]["Enums"]["patient_status"]
+          updated_at?: string | null
+          ward?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -18,7 +97,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      patient_status: "normal" | "warning" | "critical"
     }
     CompositeTypes: {
       [_ in never]: never
