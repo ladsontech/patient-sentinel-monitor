@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { PatientCard } from "@/components/PatientCard";
 import { PatientDetail } from "@/components/PatientDetail";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Database } from "@/integrations/supabase/types";
@@ -65,15 +65,42 @@ const fetchPatients = async (): Promise<Patient[]> => {
   }));
 };
 
+const updatePatientVitals = async () => {
+  try {
+    const response = await fetch('https://nazymgzhnjfpxjdsscml.supabase.co/functions/v1/update-patient-vitals', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update patient vitals');
+    }
+  } catch (error) {
+    console.error('Error updating patient vitals:', error);
+  }
+};
+
 const Index = () => {
   const { toast } = useToast();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  const { data: patients = [], isLoading } = useQuery({
+  const { data: patients = [], isLoading, refetch } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
     refetchInterval: 3000, // Refetch every 3 seconds
   });
+
+  useEffect(() => {
+    // Update vitals every 10 seconds
+    const intervalId = setInterval(() => {
+      updatePatientVitals();
+    }, 10000);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (patients.length > 0 && !selectedPatient) {
@@ -85,7 +112,7 @@ const Index = () => {
       if (patient.status === "critical") {
         toast({
           title: "Critical Condition Alert",
-          description: `${patient.name} in Room ${patient.room} needs immediate attention!`,
+          description: `${patient.name} in Room ${patient.room} needs immediate attention! Vital signs are concerning.`,
           variant: "destructive",
         });
       }
