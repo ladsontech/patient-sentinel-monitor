@@ -2,83 +2,99 @@ import { useState, useEffect } from "react";
 import { PatientCard } from "@/components/PatientCard";
 import { PatientDetail } from "@/components/PatientDetail";
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
-// Simulated data generation
-const generateVitals = () => ({
-  bloodPressure: Math.floor(Math.random() * (140 - 100) + 100),
-  oxygenSaturation: Math.floor(Math.random() * (100 - 92) + 92),
-  heartRate: Math.floor(Math.random() * (100 - 60) + 60),
-  respiratoryRate: Math.floor(Math.random() * (20 - 12) + 12),
-});
-
-const generateHistoryPoint = () => ({
-  timestamp: new Date().toLocaleTimeString(),
-  ...generateVitals(),
-});
-
-const generatePatient = (id: number) => {
-  const vitals = generateVitals();
-  let status: "normal" | "warning" | "critical";
-  
-  if (vitals.oxygenSaturation < 95 || vitals.heartRate > 90) {
-    status = "critical";
-  } else if (vitals.oxygenSaturation < 97 || vitals.heartRate > 80) {
-    status = "warning";
-  } else {
-    status = "normal";
-  }
-
-  return {
-    id: `patient-${id}`,
-    name: `Patient ${id}`,
-    room: `${Math.floor(Math.random() * 5) + 1}0${id}`,
-    ward: ["ICU", "Emergency", "General"][Math.floor(Math.random() * 3)],
-    vitals,
-    status,
-    history: Array(10).fill(null).map(generateHistoryPoint),
+// Types for our data
+interface Patient {
+  id: string;
+  name: string;
+  room: string;
+  ward: string;
+  vitals: {
+    bloodPressure: number;
+    oxygenSaturation: number;
+    heartRate: number;
+    respiratoryRate: number;
   };
+  status: "normal" | "warning" | "critical";
+  history: Array<{
+    timestamp: string;
+    bloodPressure: number;
+    oxygenSaturation: number;
+    heartRate: number;
+    respiratoryRate: number;
+  }>;
+}
+
+const fetchPatients = async (): Promise<Patient[]> => {
+  const { data: patients, error } = await supabase
+    .from('patients')
+    .select('*');
+  
+  if (error) throw error;
+  
+  const { data: history, error: historyError } = await supabase
+    .from('patient_history')
+    .select('*')
+    .order('timestamp', { ascending: true });
+  
+  if (historyError) throw historyError;
+
+  return patients.map(patient => ({
+    id: patient.id,
+    name: patient.name,
+    room: patient.room,
+    ward: patient.ward,
+    vitals: {
+      bloodPressure: patient.blood_pressure,
+      oxygenSaturation: patient.oxygen_saturation,
+      heartRate: patient.heart_rate,
+      respiratoryRate: patient.respiratory_rate
+    },
+    status: patient.status,
+    history: history
+      .filter(h => h.patient_id === patient.id)
+      .map(h => ({
+        timestamp: new Date(h.timestamp).toLocaleTimeString(),
+        bloodPressure: h.blood_pressure,
+        oxygenSaturation: h.oxygen_saturation,
+        heartRate: h.heart_rate,
+        respiratoryRate: h.respiratory_rate
+      }))
+  }));
 };
 
 const Index = () => {
-  const [patients, setPatients] = useState(Array(6).fill(null).map((_, i) => generatePatient(i + 1)));
-  const [selectedPatient, setSelectedPatient] = useState(patients[0]);
   const { toast } = useToast();
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+
+  const { data: patients = [], isLoading } = useQuery({
+    queryKey: ['patients'],
+    queryFn: fetchPatients,
+    refetchInterval: 3000, // Refetch every 3 seconds
+  });
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPatients(prevPatients => 
-        prevPatients.map(patient => {
-          const newVitals = generateVitals();
-          let newStatus: "normal" | "warning" | "critical";
-          
-          if (newVitals.oxygenSaturation < 95 || newVitals.heartRate > 90) {
-            newStatus = "critical";
-          } else if (newVitals.oxygenSaturation < 97 || newVitals.heartRate > 80) {
-            newStatus = "warning";
-          } else {
-            newStatus = "normal";
-          }
+    if (patients.length > 0 && !selectedPatient) {
+      setSelectedPatient(patients[0]);
+    }
 
-          if (newStatus === "critical" && patient.status !== "critical") {
-            toast({
-              title: "Critical Condition Alert",
-              description: `${patient.name} in Room ${patient.room} needs immediate attention!`,
-              variant: "destructive",
-            });
-          }
+    // Check for critical patients and show notifications
+    patients.forEach(patient => {
+      if (patient.status === "critical") {
+        toast({
+          title: "Critical Condition Alert",
+          description: `${patient.name} in Room ${patient.room} needs immediate attention!`,
+          variant: "destructive",
+        });
+      }
+    });
+  }, [patients, selectedPatient, toast]);
 
-          return {
-            ...patient,
-            vitals: newVitals,
-            status: newStatus,
-            history: [...patient.history.slice(-9), generateHistoryPoint()],
-          };
-        })
-      );
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, []);
+  if (isLoading) {
+    return <div className="container mx-auto py-6">Loading...</div>;
+  }
 
   return (
     <div className="container mx-auto py-6">
