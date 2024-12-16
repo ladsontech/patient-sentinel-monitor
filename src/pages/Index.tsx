@@ -32,14 +32,20 @@ const fetchPatients = async (): Promise<Patient[]> => {
     .from('patients')
     .select('*');
   
-  if (error) throw error;
+  if (error) {
+    console.error('Error fetching patients:', error);
+    throw error;
+  }
   
   const { data: history, error: historyError } = await supabase
     .from('patient_history')
     .select('*')
     .order('timestamp', { ascending: true });
   
-  if (historyError) throw historyError;
+  if (historyError) {
+    console.error('Error fetching patient history:', historyError);
+    throw historyError;
+  }
 
   return (patients as Database['public']['Tables']['patients']['Row'][]).map(patient => ({
     id: patient.id,
@@ -69,6 +75,9 @@ const updatePatientVitals = async () => {
   try {
     const response = await supabase.functions.invoke('update-patient-vitals', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
     
     if (!response.error) {
@@ -85,10 +94,20 @@ const Index = () => {
   const { toast } = useToast();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  const { data: patients = [], isLoading, refetch } = useQuery({
+  const { data: patients = [], isLoading, error } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
     refetchInterval: 1000,
+    retry: 3,
+    onError: (error) => {
+      console.error('Error fetching patients:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch patient data. Please try again later.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
   });
 
   useEffect(() => {
@@ -104,21 +123,20 @@ const Index = () => {
       setSelectedPatient(patients[0]);
     }
 
-    // Check for critical patients and show notifications with 5 second duration
     patients.forEach(patient => {
       if (patient.status === "critical") {
         toast({
           title: "Critical Condition Alert",
           description: `${patient.name} in Room ${patient.room} needs immediate attention! Vital signs are concerning.`,
           variant: "destructive",
-          duration: 5000, // Set duration to 5 seconds
+          duration: 5000,
         });
       } else if (patient.status === "warning") {
         toast({
           title: "Warning Alert",
           description: `${patient.name} in Room ${patient.room} requires attention. Vital signs are concerning.`,
           variant: "destructive",
-          duration: 5000, // Set duration to 5 seconds
+          duration: 5000,
         });
       }
     });
@@ -126,6 +144,14 @@ const Index = () => {
 
   if (isLoading) {
     return <div className="container mx-auto py-6">Loading...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto py-6 text-red-500">
+        Error loading patients. Please try again later.
+      </div>
+    );
   }
 
   return (

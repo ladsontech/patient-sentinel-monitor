@@ -124,6 +124,7 @@ serve(async (req) => {
           .insert({
             patient_id: patient.id,
             ...newVitals,
+            timestamp: new Date().toISOString()
           });
 
         if (historyError) {
