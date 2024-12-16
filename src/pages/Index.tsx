@@ -88,16 +88,16 @@ const Index = () => {
   const { data: patients = [], isLoading, refetch } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
-    refetchInterval: 1000, // Update every second instead of 3 seconds
+    refetchInterval: 1000, // Update graph data every second
   });
 
   useEffect(() => {
-    // Update vitals every second instead of 10 seconds
-    const intervalId = setInterval(() => {
+    // Update vitals every second for real-time graph updates
+    const vitalUpdateInterval = setInterval(() => {
       updatePatientVitals();
     }, 1000);
 
-    return () => clearInterval(intervalId);
+    return () => clearInterval(vitalUpdateInterval);
   }, []);
 
   useEffect(() => {
@@ -122,11 +122,11 @@ const Index = () => {
   }
 
   return (
-    <div className="container mx-auto py-6">
+    <div className="container mx-auto px-4 py-6">
       <h1 className="text-3xl font-bold mb-8">Hospital Alert System</h1>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 space-y-4">
+        <div className="lg:col-span-1 space-y-4 max-h-[calc(100vh-12rem)] overflow-y-auto">
           {patients.map((patient) => (
             <PatientCard
               key={patient.id}
@@ -137,7 +137,7 @@ const Index = () => {
           ))}
         </div>
         
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 max-h-[calc(100vh-12rem)] overflow-y-auto">
           {selectedPatient && <PatientDetail patient={selectedPatient} />}
         </div>
       </div>

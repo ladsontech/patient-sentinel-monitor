@@ -10,11 +10,12 @@ const corsHeaders = {
 
 // Keep track of when we last generated an alert for each patient
 const lastAlertTimes = new Map<string, number>();
-const ALERT_COOLDOWN = 30000; // 30 seconds cooldown between alerts for the same patient
+const ALERT_COOLDOWN = 10000; // Back to 10 seconds cooldown between alerts
+const CRITICAL_STATE_DURATION = 10000; // 10 seconds in critical state
+const criticalStateTimers = new Map<string, number>(); // Track when patients entered critical state
 
 const generateAlert = async (patient: any, genAI: any) => {
   try {
-    // Use the mini model which has higher rate limits
     const model = genAI.getGenerativeModel({ model: "gemini-pro-mini" });
     
     const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
@@ -29,7 +30,6 @@ const generateAlert = async (patient: any, genAI: any) => {
     return response.text();
   } catch (error) {
     console.error('Error generating alert:', error);
-    // Return a default message if AI generation fails
     return `Alert: Patient ${patient.name} has entered critical condition. Immediate attention required.`;
   }
 };
@@ -57,6 +57,7 @@ serve(async (req) => {
     // Update each patient's vitals with smaller variations
     for (const patient of patients) {
       const previousStatus = patient.status;
+      const now = Date.now();
       
       // Generate smaller variations for more realistic continuous monitoring
       const newVitals = {
@@ -66,19 +67,28 @@ serve(async (req) => {
         respiratory_rate: patient.respiratory_rate + Math.floor(Math.random() * 2 - 1) // ±1
       };
 
-      // Determine status based on vital signs
+      // Determine status based on vital signs and critical state timer
       let status = 'normal';
+      const criticalStartTime = criticalStateTimers.get(patient.id);
+      
       if (newVitals.oxygen_saturation < 90 || newVitals.heart_rate > 100 || newVitals.blood_pressure > 160) {
+        if (!criticalStartTime) {
+          criticalStateTimers.set(patient.id, now);
+        }
         status = 'critical';
       } else if (newVitals.oxygen_saturation < 94 || newVitals.heart_rate > 90 || newVitals.blood_pressure > 140) {
         status = 'warning';
       }
 
-      // Generate AI alert only if:
-      // 1. Status changed to critical
-      // 2. We haven't generated an alert recently for this patient
+      // Keep critical state for minimum duration
+      if (criticalStartTime && now - criticalStartTime < CRITICAL_STATE_DURATION) {
+        status = 'critical';
+      } else if (criticalStartTime && status !== 'critical') {
+        criticalStateTimers.delete(patient.id);
+      }
+
+      // Generate AI alert only if status changed to critical and cooldown passed
       let aiAlert = null;
-      const now = Date.now();
       const lastAlertTime = lastAlertTimes.get(patient.id) || 0;
       
       if (status === 'critical' && 
