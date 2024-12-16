@@ -67,16 +67,14 @@ const fetchPatients = async (): Promise<Patient[]> => {
 
 const updatePatientVitals = async () => {
   try {
-    const response = await fetch('https://nazymgzhnjfpxjdsscml.supabase.co/functions/v1/update-patient-vitals', {
+    const response = await supabase.functions.invoke('update-patient-vitals', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
-      }
     });
     
-    if (!response.ok) {
-      throw new Error('Failed to update patient vitals');
+    if (!response.error) {
+      console.log('Vitals updated successfully');
+    } else {
+      console.error('Error updating patient vitals:', response.error);
     }
   } catch (error) {
     console.error('Error updating patient vitals:', error);
@@ -90,14 +88,14 @@ const Index = () => {
   const { data: patients = [], isLoading, refetch } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
-    refetchInterval: 3000, // Refetch every 3 seconds
+    refetchInterval: 1000, // Update every second instead of 3 seconds
   });
 
   useEffect(() => {
-    // Update vitals every 10 seconds
+    // Update vitals every second instead of 10 seconds
     const intervalId = setInterval(() => {
       updatePatientVitals();
-    }, 10000);
+    }, 1000);
 
     return () => clearInterval(intervalId);
   }, []);

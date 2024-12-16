@@ -42,13 +42,14 @@ serve(async (req) => {
     
     if (patientsError) throw patientsError;
 
-    // Update each patient's vitals with variations
+    // Update each patient's vitals with smaller variations
     for (const patient of patients) {
+      // Generate smaller variations for more realistic continuous monitoring
       const newVitals = {
-        blood_pressure: patient.blood_pressure + Math.floor(Math.random() * 20 - 10),
-        oxygen_saturation: Math.min(100, Math.max(85, patient.oxygen_saturation + Math.floor(Math.random() * 8 - 4))),
-        heart_rate: patient.heart_rate + Math.floor(Math.random() * 16 - 8),
-        respiratory_rate: patient.respiratory_rate + Math.floor(Math.random() * 8 - 4)
+        blood_pressure: patient.blood_pressure + Math.floor(Math.random() * 6 - 3), // ±3
+        oxygen_saturation: Math.min(100, Math.max(85, patient.oxygen_saturation + Math.floor(Math.random() * 4 - 2))), // ±2
+        heart_rate: patient.heart_rate + Math.floor(Math.random() * 4 - 2), // ±2
+        respiratory_rate: patient.respiratory_rate + Math.floor(Math.random() * 2 - 1) // ±1
       };
 
       // Determine status based on vital signs
