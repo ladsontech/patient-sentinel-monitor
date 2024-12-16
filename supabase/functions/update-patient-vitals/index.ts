@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
@@ -7,19 +8,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const generateAlert = async (patient: any, genAI: any) => {
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-  
-  const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
-    - Blood Pressure: ${patient.blood_pressure}
-    - Oxygen Saturation: ${patient.oxygen_saturation}%
-    - Heart Rate: ${patient.heart_rate} bpm
-    - Respiratory Rate: ${patient.respiratory_rate}
-    Keep it professional and concise, focusing on the most concerning vital sign.`;
+// Keep track of when we last generated an alert for each patient
+const lastAlertTimes = new Map<string, number>();
+const ALERT_COOLDOWN = 10000; // 10 seconds cooldown between alerts for the same patient
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text();
+const generateAlert = async (patient: any, genAI: any) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    
+    const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
+      - Blood Pressure: ${patient.blood_pressure}
+      - Oxygen Saturation: ${patient.oxygen_saturation}%
+      - Heart Rate: ${patient.heart_rate} bpm
+      - Respiratory Rate: ${patient.respiratory_rate}
+      Keep it professional and concise, focusing on the most concerning vital sign.`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error('Error generating alert:', error);
+    // Return a default message if AI generation fails
+    return `Alert: Patient ${patient.name} has entered critical condition. Immediate attention required.`;
+  }
 };
 
 serve(async (req) => {
@@ -44,6 +55,8 @@ serve(async (req) => {
 
     // Update each patient's vitals with smaller variations
     for (const patient of patients) {
+      const previousStatus = patient.status;
+      
       // Generate smaller variations for more realistic continuous monitoring
       const newVitals = {
         blood_pressure: patient.blood_pressure + Math.floor(Math.random() * 6 - 3), // ±3
@@ -60,10 +73,22 @@ serve(async (req) => {
         status = 'warning';
       }
 
-      // If status is critical, generate AI alert
+      // Generate AI alert only if:
+      // 1. Status changed to critical
+      // 2. We haven't generated an alert recently for this patient
       let aiAlert = null;
-      if (status === 'critical') {
-        aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
+      const now = Date.now();
+      const lastAlertTime = lastAlertTimes.get(patient.id) || 0;
+      
+      if (status === 'critical' && 
+          previousStatus !== 'critical' && 
+          now - lastAlertTime > ALERT_COOLDOWN) {
+        try {
+          aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
+          lastAlertTimes.set(patient.id, now);
+        } catch (error) {
+          console.error('Failed to generate AI alert:', error);
+        }
       }
 
       // Update patient vitals
