@@ -28,25 +28,20 @@ type Patient = {
 };
 
 const fetchPatients = async (): Promise<Patient[]> => {
-  const { data: patientsData, error: patientsError } = await supabase
+  const { data: patients, error } = await supabase
     .from('patients')
     .select('*');
-
-  if (patientsError) {
-    console.error('Error fetching patients:', patientsError);
-    throw patientsError;
-  }
-
-  const { data: historyData, error: historyError } = await supabase
+  
+  if (error) throw error;
+  
+  const { data: history, error: historyError } = await supabase
     .from('patient_history')
-    .select('*');
+    .select('*')
+    .order('timestamp', { ascending: true });
+  
+  if (historyError) throw historyError;
 
-  if (historyError) {
-    console.error('Error fetching patient history:', historyError);
-    throw historyError;
-  }
-
-  return patientsData.map(patient => ({
+  return (patients as Database['public']['Tables']['patients']['Row'][]).map(patient => ({
     id: patient.id,
     name: patient.name,
     room: patient.room,
@@ -58,10 +53,10 @@ const fetchPatients = async (): Promise<Patient[]> => {
       respiratoryRate: patient.respiratory_rate
     },
     status: patient.status,
-    history: historyData
+    history: (history as Database['public']['Tables']['patient_history']['Row'][])
       .filter(h => h.patient_id === patient.id)
       .map(h => ({
-        timestamp: h.timestamp || new Date().toISOString(),
+        timestamp: new Date(h.timestamp!).toLocaleTimeString(),
         bloodPressure: h.blood_pressure,
         oxygenSaturation: h.oxygen_saturation,
         heartRate: h.heart_rate,
@@ -72,19 +67,17 @@ const fetchPatients = async (): Promise<Patient[]> => {
 
 const updatePatientVitals = async () => {
   try {
-    const { data, error } = await supabase.functions.invoke('update-patient-vitals', {
-      method: 'POST'
+    const response = await supabase.functions.invoke('update-patient-vitals', {
+      method: 'POST',
     });
     
-    if (error) {
-      console.error('Error updating patient vitals:', error);
-      throw error;
+    if (!response.error) {
+      console.log('Vitals updated successfully');
+    } else {
+      console.error('Error updating patient vitals:', response.error);
     }
-    
-    console.log('Patient vitals updated successfully:', data);
   } catch (error) {
-    console.error('Error in updatePatientVitals:', error);
-    throw error;
+    console.error('Error updating patient vitals:', error);
   }
 };
 
@@ -92,34 +85,19 @@ const Index = () => {
   const { toast } = useToast();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  const { data: patients = [], isLoading, error } = useQuery({
+  const { data: patients = [], isLoading, refetch } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
-    refetchInterval: 1000,
-    retry: 3,
-    meta: {
-      onError: (error: Error) => {
-        console.error('Error fetching patients:', error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch patient data. Please try again later.",
-          variant: "destructive",
-        });
-      }
-    }
+    refetchInterval: 1000, // Update every second instead of 3 seconds
   });
 
   useEffect(() => {
-    const updateVitals = async () => {
-      try {
-        await updatePatientVitals();
-      } catch (error) {
-        console.error('Error in vital update interval:', error);
-      }
-    };
+    // Update vitals every second instead of 10 seconds
+    const intervalId = setInterval(() => {
+      updatePatientVitals();
+    }, 1000);
 
-    const interval = setInterval(updateVitals, 5000);
-    return () => clearInterval(interval);
+    return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -127,18 +105,12 @@ const Index = () => {
       setSelectedPatient(patients[0]);
     }
 
-    // Show notifications for critical patients
+    // Check for critical patients and show notifications
     patients.forEach(patient => {
       if (patient.status === "critical") {
         toast({
           title: "Critical Condition Alert",
           description: `${patient.name} in Room ${patient.room} needs immediate attention! Vital signs are concerning.`,
-          variant: "destructive",
-        });
-      } else if (patient.status === "warning") {
-        toast({
-          title: "Warning Alert",
-          description: `${patient.name} in Room ${patient.room} shows concerning vital signs.`,
           variant: "destructive",
         });
       }
@@ -150,11 +122,11 @@ const Index = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold mb-6">Hospital Alert System</h1>
+    <div className="container mx-auto py-6">
+      <h1 className="text-3xl font-bold mb-8">Hospital Alert System</h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-1 space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 space-y-4">
           {patients.map((patient) => (
             <PatientCard
               key={patient.id}
@@ -165,7 +137,7 @@ const Index = () => {
           ))}
         </div>
         
-        <div className="lg:col-span-2 max-h-[calc(100vh-12rem)] overflow-y-auto">
+        <div className="lg:col-span-2">
           {selectedPatient && <PatientDetail patient={selectedPatient} />}
         </div>
       </div>

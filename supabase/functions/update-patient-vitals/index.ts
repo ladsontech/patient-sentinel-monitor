@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
@@ -5,177 +6,130 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// Initialize Supabase client
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-const ALERT_COOLDOWN = 10000; // 10 seconds cooldown between alerts
-const CRITICAL_STATE_DURATION = 10000; // 10 seconds in critical state
-const criticalStateTimers = new Map<string, number>(); // Track when patients entered critical state
-
-// Define normal ranges for vital signs
-const VITAL_RANGES = {
-  bloodPressure: { min: 90, max: 140, criticalLow: 85, criticalHigh: 160 },
-  oxygenSaturation: { min: 95, max: 100, criticalLow: 90 },
-  heartRate: { min: 60, max: 100, criticalLow: 50, criticalHigh: 120 },
-  respiratoryRate: { min: 12, max: 20, criticalLow: 8, criticalHigh: 25 }
-};
-
-// Helper function to generate random variation within a range
-const generateVariation = (current: number, minChange: number, maxChange: number, min: number, max: number) => {
-  const change = Math.random() * (maxChange - minChange) + minChange;
-  const direction = Math.random() > 0.5 ? 1 : -1;
-  return Math.min(max, Math.max(min, current + (change * direction)));
-};
+// Keep track of when we last generated an alert for each patient
+const lastAlertTimes = new Map<string, number>();
+const ALERT_COOLDOWN = 30000; // 30 seconds cooldown between alerts for the same patient
 
 const generateAlert = async (patient: any, genAI: any) => {
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-  const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
-    - Blood Pressure: ${patient.blood_pressure}
-    - Oxygen Saturation: ${patient.oxygen_saturation}%
-    - Heart Rate: ${patient.heart_rate}
-    - Respiratory Rate: ${patient.respiratory_rate}
-    Keep it concise and professional.`;
-
   try {
+    // Use the mini model which has higher rate limits
+    const model = genAI.getGenerativeModel({ model: "gemini-pro-mini" });
+    
+    const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
+      - Blood Pressure: ${patient.blood_pressure}
+      - Oxygen Saturation: ${patient.oxygen_saturation}%
+      - Heart Rate: ${patient.heart_rate} bpm
+      - Respiratory Rate: ${patient.respiratory_rate}
+      Keep it professional and concise, focusing on the most concerning vital sign.`;
+
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
   } catch (error) {
     console.error('Error generating alert:', error);
-    return `Alert: Patient ${patient.name} in Room ${patient.room} has entered critical condition. Immediate attention required.`;
+    // Return a default message if AI generation fails
+    return `Alert: Patient ${patient.name} has entered critical condition. Immediate attention required.`;
   }
 };
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders
-    });
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
+
     // Fetch all patients
-    const { data: patients, error: fetchError } = await supabase
+    const { data: patients, error: patientsError } = await supabaseClient
       .from('patients')
       .select('*');
+    
+    if (patientsError) throw patientsError;
 
-    if (fetchError) {
-      console.error('Error fetching patients:', fetchError);
-      throw fetchError;
-    }
-
-    if (!patients || patients.length === 0) {
-      console.warn('No patients found in database');
-      return new Response(
-        JSON.stringify({ message: 'No patients found' }),
-        { 
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
-    }
-
-    console.log(`Processing ${patients.length} patients`);
-
-    // Update each patient's vitals with realistic variations
+    // Update each patient's vitals with smaller variations
     for (const patient of patients) {
+      const previousStatus = patient.status;
+      
+      // Generate smaller variations for more realistic continuous monitoring
       const newVitals = {
-        blood_pressure: generateVariation(patient.blood_pressure, 1, 5, 80, 180),
-        oxygen_saturation: generateVariation(patient.oxygen_saturation, 0.1, 1, 85, 100),
-        heart_rate: generateVariation(patient.heart_rate, 1, 3, 40, 140),
-        respiratory_rate: generateVariation(patient.respiratory_rate, 0.5, 2, 8, 30),
-        timestamp: new Date().toISOString()
+        blood_pressure: patient.blood_pressure + Math.floor(Math.random() * 6 - 3), // ±3
+        oxygen_saturation: Math.min(100, Math.max(85, patient.oxygen_saturation + Math.floor(Math.random() * 4 - 2))), // ±2
+        heart_rate: patient.heart_rate + Math.floor(Math.random() * 4 - 2), // ±2
+        respiratory_rate: patient.respiratory_rate + Math.floor(Math.random() * 2 - 1) // ±1
       };
 
-      // Determine patient status based on vital signs
+      // Determine status based on vital signs
       let status = 'normal';
-      const now = Date.now();
-
-      if (
-        newVitals.blood_pressure <= VITAL_RANGES.bloodPressure.criticalLow ||
-        newVitals.blood_pressure >= VITAL_RANGES.bloodPressure.criticalHigh ||
-        newVitals.oxygen_saturation <= VITAL_RANGES.oxygenSaturation.criticalLow ||
-        newVitals.heart_rate <= VITAL_RANGES.heartRate.criticalLow ||
-        newVitals.heart_rate >= VITAL_RANGES.heartRate.criticalHigh ||
-        newVitals.respiratory_rate <= VITAL_RANGES.respiratoryRate.criticalLow ||
-        newVitals.respiratory_rate >= VITAL_RANGES.respiratoryRate.criticalHigh
-      ) {
-        if (!criticalStateTimers.has(patient.id)) {
-          criticalStateTimers.set(patient.id, now);
-        }
-
-        if (now - criticalStateTimers.get(patient.id)! >= CRITICAL_STATE_DURATION) {
-          status = 'critical';
-        } else {
-          status = 'warning';
-        }
-      } else if (
-        newVitals.blood_pressure <= VITAL_RANGES.bloodPressure.min ||
-        newVitals.blood_pressure >= VITAL_RANGES.bloodPressure.max ||
-        newVitals.oxygen_saturation <= VITAL_RANGES.oxygenSaturation.min ||
-        newVitals.heart_rate <= VITAL_RANGES.heartRate.min ||
-        newVitals.heart_rate >= VITAL_RANGES.heartRate.max ||
-        newVitals.respiratory_rate <= VITAL_RANGES.respiratoryRate.min ||
-        newVitals.respiratory_rate >= VITAL_RANGES.respiratoryRate.max
-      ) {
+      if (newVitals.oxygen_saturation < 90 || newVitals.heart_rate > 100 || newVitals.blood_pressure > 160) {
+        status = 'critical';
+      } else if (newVitals.oxygen_saturation < 94 || newVitals.heart_rate > 90 || newVitals.blood_pressure > 140) {
         status = 'warning';
-        criticalStateTimers.delete(patient.id);
-      } else {
-        status = 'normal';
-        criticalStateTimers.delete(patient.id);
       }
 
-      // Store the historical data
-      const { error: historyError } = await supabase
-        .from('patient_history')
-        .insert([
-          {
-            patient_id: patient.id,
-            ...newVitals
-          }
-        ]);
-
-      if (historyError) {
-        console.error(`Error storing history for patient ${patient.id}:`, historyError);
+      // Generate AI alert only if:
+      // 1. Status changed to critical
+      // 2. We haven't generated an alert recently for this patient
+      let aiAlert = null;
+      const now = Date.now();
+      const lastAlertTime = lastAlertTimes.get(patient.id) || 0;
+      
+      if (status === 'critical' && 
+          previousStatus !== 'critical' && 
+          now - lastAlertTime > ALERT_COOLDOWN) {
+        try {
+          aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
+          lastAlertTimes.set(patient.id, now);
+          console.log(`Generated AI alert for patient ${patient.name}: ${aiAlert}`);
+        } catch (error) {
+          console.error('Failed to generate AI alert:', error);
+        }
       }
 
-      // Update the patient's current vitals
-      const { error: updateError } = await supabase
+      // Update patient vitals
+      await supabaseClient
         .from('patients')
         .update({
           ...newVitals,
-          status,
+          status: status,
           updated_at: new Date().toISOString()
         })
         .eq('id', patient.id);
 
-      if (updateError) {
-        console.error(`Error updating patient ${patient.id}:`, updateError);
+      // Add to history
+      await supabaseClient
+        .from('patient_history')
+        .insert({
+          patient_id: patient.id,
+          ...newVitals,
+        });
+
+      if (aiAlert) {
+        console.log('AI Alert for patient', patient.name, ':', aiAlert);
       }
     }
 
     return new Response(
-      JSON.stringify({ message: 'Patients updated successfully' }),
+      JSON.stringify({ message: 'Vitals updated successfully' }),
       { 
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200 
       }
     );
-
   } catch (error) {
-    console.error('Error in update-patient-vitals function:', error);
+    console.error('Error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500 
       }
     );
   }

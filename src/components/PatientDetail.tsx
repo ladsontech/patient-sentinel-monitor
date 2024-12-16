@@ -27,8 +27,8 @@ interface PatientDetailProps {
 
 export function PatientDetail({ patient }: PatientDetailProps) {
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">{patient.name}</h2>
           <p className="text-gray-500">
@@ -47,7 +47,7 @@ export function PatientDetail({ patient }: PatientDetailProps) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card className="p-4">
           <p className="vital-label">Blood Pressure</p>
           <p className="vital-value">{patient.vitals.bloodPressure}</p>
@@ -68,8 +68,7 @@ export function PatientDetail({ patient }: PatientDetailProps) {
 
       <Card className="graph-container">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={patient.history.slice(-30)} // Show last 30 data points for better visualization
-          >
+          <LineChart data={patient.history}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="timestamp" />
             <YAxis />
