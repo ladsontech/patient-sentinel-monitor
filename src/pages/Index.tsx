@@ -88,11 +88,10 @@ const Index = () => {
   const { data: patients = [], isLoading, refetch } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
-    refetchInterval: 1000, // Update every second instead of 3 seconds
+    refetchInterval: 1000,
   });
 
   useEffect(() => {
-    // Update vitals every second instead of 10 seconds
     const intervalId = setInterval(() => {
       updatePatientVitals();
     }, 1000);
@@ -105,13 +104,21 @@ const Index = () => {
       setSelectedPatient(patients[0]);
     }
 
-    // Check for critical patients and show notifications
+    // Check for critical patients and show notifications with 5 second duration
     patients.forEach(patient => {
       if (patient.status === "critical") {
         toast({
           title: "Critical Condition Alert",
           description: `${patient.name} in Room ${patient.room} needs immediate attention! Vital signs are concerning.`,
           variant: "destructive",
+          duration: 5000, // Set duration to 5 seconds
+        });
+      } else if (patient.status === "warning") {
+        toast({
+          title: "Warning Alert",
+          description: `${patient.name} in Room ${patient.room} requires attention. Vital signs are concerning.`,
+          variant: "destructive",
+          duration: 5000, // Set duration to 5 seconds
         });
       }
     });
