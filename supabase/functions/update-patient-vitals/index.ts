@@ -5,18 +5,20 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Max-Age': '86400',
 };
 
 // Keep track of when we last generated an alert for each patient
 const lastAlertTimes = new Map<string, number>();
-const ALERT_COOLDOWN = 10000; // Back to 10 seconds cooldown between alerts
+const ALERT_COOLDOWN = 10000; // 10 seconds cooldown between alerts
 const CRITICAL_STATE_DURATION = 10000; // 10 seconds in critical state
 const criticalStateTimers = new Map<string, number>(); // Track when patients entered critical state
 
 const generateAlert = async (patient: any, genAI: any) => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro-mini" });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
     const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
       - Blood Pressure: ${patient.blood_pressure}
@@ -35,11 +37,17 @@ const generateAlert = async (patient: any, genAI: any) => {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204,
+      headers: corsHeaders 
+    });
   }
 
   try {
+    console.log('Starting vitals update process');
+    
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -52,7 +60,12 @@ serve(async (req) => {
       .from('patients')
       .select('*');
     
-    if (patientsError) throw patientsError;
+    if (patientsError) {
+      console.error('Error fetching patients:', patientsError);
+      throw patientsError;
+    }
+
+    console.log(`Processing ${patients?.length ?? 0} patients`);
 
     // Update each patient's vitals with smaller variations
     for (const patient of patients) {
@@ -103,26 +116,36 @@ serve(async (req) => {
         }
       }
 
-      // Update patient vitals
-      await supabaseClient
-        .from('patients')
-        .update({
-          ...newVitals,
-          status: status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', patient.id);
+      try {
+        // Update patient vitals
+        const { error: updateError } = await supabaseClient
+          .from('patients')
+          .update({
+            ...newVitals,
+            status: status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', patient.id);
 
-      // Add to history
-      await supabaseClient
-        .from('patient_history')
-        .insert({
-          patient_id: patient.id,
-          ...newVitals,
-        });
+        if (updateError) {
+          console.error(`Error updating patient ${patient.id}:`, updateError);
+          continue;
+        }
 
-      if (aiAlert) {
-        console.log('AI Alert for patient', patient.name, ':', aiAlert);
+        // Add to history
+        const { error: historyError } = await supabaseClient
+          .from('patient_history')
+          .insert({
+            patient_id: patient.id,
+            ...newVitals,
+          });
+
+        if (historyError) {
+          console.error(`Error adding history for patient ${patient.id}:`, historyError);
+        }
+
+      } catch (error) {
+        console.error(`Error processing patient ${patient.id}:`, error);
       }
     }
 
@@ -134,7 +157,7 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error in update-patient-vitals function:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
