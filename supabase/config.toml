@@ -1,1 +1,4 @@
 project_id = "nazymgzhnjfpxjdsscml"
+
+[functions.update-patient-vitals]
+verify_jwt = false

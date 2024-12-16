@@ -35,11 +35,17 @@ const generateAlert = async (patient: any, genAI: any) => {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      headers: corsHeaders,
+      status: 204,
+    });
   }
 
   try {
+    console.log('Starting vitals update process');
+    
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -52,7 +58,10 @@ serve(async (req) => {
       .from('patients')
       .select('*');
     
-    if (patientsError) throw patientsError;
+    if (patientsError) {
+      console.error('Error fetching patients:', patientsError);
+      throw patientsError;
+    }
 
     // Update each patient's vitals with smaller variations
     for (const patient of patients) {
@@ -93,26 +102,39 @@ serve(async (req) => {
         }
       }
 
-      // Update patient vitals
-      await supabaseClient
-        .from('patients')
-        .update({
-          ...newVitals,
-          status: status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', patient.id);
+      try {
+        // Update patient vitals
+        const { error: updateError } = await supabaseClient
+          .from('patients')
+          .update({
+            ...newVitals,
+            status: status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', patient.id);
 
-      // Add to history
-      await supabaseClient
-        .from('patient_history')
-        .insert({
-          patient_id: patient.id,
-          ...newVitals,
-        });
+        if (updateError) {
+          console.error(`Error updating patient ${patient.id}:`, updateError);
+          continue;
+        }
 
-      if (aiAlert) {
-        console.log('AI Alert for patient', patient.name, ':', aiAlert);
+        // Add to history
+        const { error: historyError } = await supabaseClient
+          .from('patient_history')
+          .insert({
+            patient_id: patient.id,
+            ...newVitals,
+          });
+
+        if (historyError) {
+          console.error(`Error adding history for patient ${patient.id}:`, historyError);
+        }
+
+        if (aiAlert) {
+          console.log('AI Alert for patient', patient.name, ':', aiAlert);
+        }
+      } catch (error) {
+        console.error(`Error processing patient ${patient.id}:`, error);
       }
     }
 
