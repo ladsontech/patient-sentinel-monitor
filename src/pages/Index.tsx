@@ -72,7 +72,18 @@ const Index = () => {
   const { data: patients = [], isLoading } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
-    refetchInterval: 3000, // Refetch every 3 seconds
+    refetchInterval: 3000,
+    meta: {
+      onError: (error: Error) => {
+        console.error('Error fetching patients:', error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch patient data. Please try again later.",
+          variant: "destructive",
+          duration: 5000,
+        });
+      }
+    }
   });
 
   useEffect(() => {
@@ -87,6 +98,7 @@ const Index = () => {
           title: "Critical Condition Alert",
           description: `${patient.name} in Room ${patient.room} needs immediate attention!`,
           variant: "destructive",
+          duration: 5000,
         });
       }
     });

@@ -7,6 +7,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -17,12 +18,19 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    console.log('Fetching patients...')
+    
     // Fetch all patients
     const { data: patients, error: patientsError } = await supabaseClient
       .from('patients')
       .select('*')
     
-    if (patientsError) throw patientsError
+    if (patientsError) {
+      console.error('Error fetching patients:', patientsError)
+      throw patientsError
+    }
+
+    console.log(`Updating vitals for ${patients.length} patients...`)
 
     // Update each patient's vitals with slight variations
     for (const patient of patients) {
@@ -41,8 +49,10 @@ serve(async (req) => {
         status = 'warning'
       }
 
+      console.log(`Updating patient ${patient.id} with new vitals:`, newVitals)
+
       // Update patient vitals
-      await supabaseClient
+      const { error: updateError } = await supabaseClient
         .from('patients')
         .update({
           ...newVitals,
@@ -51,13 +61,24 @@ serve(async (req) => {
         })
         .eq('id', patient.id)
 
+      if (updateError) {
+        console.error(`Error updating patient ${patient.id}:`, updateError)
+        throw updateError
+      }
+
       // Add to history
-      await supabaseClient
+      const { error: historyError } = await supabaseClient
         .from('patient_history')
         .insert({
           patient_id: patient.id,
           ...newVitals,
+          timestamp: new Date().toISOString()
         })
+
+      if (historyError) {
+        console.error(`Error adding history for patient ${patient.id}:`, historyError)
+        throw historyError
+      }
     }
 
     return new Response(
@@ -68,6 +89,7 @@ serve(async (req) => {
       }
     )
   } catch (error) {
+    console.error('Error in update-patient-vitals function:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
