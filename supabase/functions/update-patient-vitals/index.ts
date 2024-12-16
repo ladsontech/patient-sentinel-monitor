@@ -16,6 +16,21 @@ const ALERT_COOLDOWN = 10000; // 10 seconds cooldown between alerts
 const CRITICAL_STATE_DURATION = 10000; // 10 seconds in critical state
 const criticalStateTimers = new Map<string, number>(); // Track when patients entered critical state
 
+// Define normal ranges for vital signs
+const VITAL_RANGES = {
+  bloodPressure: { min: 90, max: 140, criticalLow: 85, criticalHigh: 160 },
+  oxygenSaturation: { min: 95, max: 100, criticalLow: 90 },
+  heartRate: { min: 60, max: 100, criticalLow: 50, criticalHigh: 120 },
+  respiratoryRate: { min: 12, max: 20, criticalLow: 8, criticalHigh: 25 }
+};
+
+// Helper function to generate random variation within a range
+const generateVariation = (current: number, minChange: number, maxChange: number, min: number, max: number) => {
+  const change = Math.random() * (maxChange - minChange) + minChange;
+  const direction = Math.random() > 0.5 ? 1 : -1;
+  return Math.min(max, Math.max(min, current + (change * direction)));
+};
+
 const generateAlert = async (patient: any, genAI: any) => {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
@@ -67,29 +82,69 @@ serve(async (req) => {
 
     console.log(`Processing ${patients?.length ?? 0} patients`);
 
-    // Update each patient's vitals with smaller variations
+    // Update each patient's vitals with realistic variations
     for (const patient of patients) {
       const previousStatus = patient.status;
       const now = Date.now();
       
-      // Generate smaller variations for more realistic continuous monitoring
+      // Generate realistic variations for vital signs
       const newVitals = {
-        blood_pressure: patient.blood_pressure + Math.floor(Math.random() * 6 - 3), // ±3
-        oxygen_saturation: Math.min(100, Math.max(85, patient.oxygen_saturation + Math.floor(Math.random() * 4 - 2))), // ±2
-        heart_rate: patient.heart_rate + Math.floor(Math.random() * 4 - 2), // ±2
-        respiratory_rate: patient.respiratory_rate + Math.floor(Math.random() * 2 - 1) // ±1
+        blood_pressure: Math.round(generateVariation(
+          patient.blood_pressure,
+          0.5,
+          2,
+          VITAL_RANGES.bloodPressure.min,
+          VITAL_RANGES.bloodPressure.max
+        )),
+        oxygen_saturation: Math.round(generateVariation(
+          patient.oxygen_saturation,
+          0.1,
+          0.5,
+          VITAL_RANGES.oxygenSaturation.min,
+          VITAL_RANGES.oxygenSaturation.max
+        )),
+        heart_rate: Math.round(generateVariation(
+          patient.heart_rate,
+          1,
+          3,
+          VITAL_RANGES.heartRate.min,
+          VITAL_RANGES.heartRate.max
+        )),
+        respiratory_rate: Math.round(generateVariation(
+          patient.respiratory_rate,
+          0.5,
+          1,
+          VITAL_RANGES.respiratoryRate.min,
+          VITAL_RANGES.respiratoryRate.max
+        ))
       };
 
       // Determine status based on vital signs and critical state timer
       let status = 'normal';
       const criticalStartTime = criticalStateTimers.get(patient.id);
       
-      if (newVitals.oxygen_saturation < 90 || newVitals.heart_rate > 100 || newVitals.blood_pressure > 160) {
+      if (
+        newVitals.blood_pressure < VITAL_RANGES.bloodPressure.criticalLow ||
+        newVitals.blood_pressure > VITAL_RANGES.bloodPressure.criticalHigh ||
+        newVitals.oxygen_saturation < VITAL_RANGES.oxygenSaturation.criticalLow ||
+        newVitals.heart_rate < VITAL_RANGES.heartRate.criticalLow ||
+        newVitals.heart_rate > VITAL_RANGES.heartRate.criticalHigh ||
+        newVitals.respiratory_rate < VITAL_RANGES.respiratoryRate.criticalLow ||
+        newVitals.respiratory_rate > VITAL_RANGES.respiratoryRate.criticalHigh
+      ) {
         if (!criticalStartTime) {
           criticalStateTimers.set(patient.id, now);
         }
         status = 'critical';
-      } else if (newVitals.oxygen_saturation < 94 || newVitals.heart_rate > 90 || newVitals.blood_pressure > 140) {
+      } else if (
+        newVitals.blood_pressure < VITAL_RANGES.bloodPressure.min ||
+        newVitals.blood_pressure > VITAL_RANGES.bloodPressure.max ||
+        newVitals.oxygen_saturation < VITAL_RANGES.oxygenSaturation.min ||
+        newVitals.heart_rate < VITAL_RANGES.heartRate.min ||
+        newVitals.heart_rate > VITAL_RANGES.heartRate.max ||
+        newVitals.respiratory_rate < VITAL_RANGES.respiratoryRate.min ||
+        newVitals.respiratory_rate > VITAL_RANGES.respiratoryRate.max
+      ) {
         status = 'warning';
       }
 
