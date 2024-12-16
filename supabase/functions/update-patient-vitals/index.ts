@@ -10,11 +10,12 @@ const corsHeaders = {
 
 // Keep track of when we last generated an alert for each patient
 const lastAlertTimes = new Map<string, number>();
-const ALERT_COOLDOWN = 10000; // 10 seconds cooldown between alerts for the same patient
+const ALERT_COOLDOWN = 30000; // 30 seconds cooldown between alerts for the same patient
 
 const generateAlert = async (patient: any, genAI: any) => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // Use the mini model which has higher rate limits
+    const model = genAI.getGenerativeModel({ model: "gemini-pro-mini" });
     
     const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
       - Blood Pressure: ${patient.blood_pressure}
@@ -86,6 +87,7 @@ serve(async (req) => {
         try {
           aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
           lastAlertTimes.set(patient.id, now);
+          console.log(`Generated AI alert for patient ${patient.name}: ${aiAlert}`);
         } catch (error) {
           console.error('Failed to generate AI alert:', error);
         }
