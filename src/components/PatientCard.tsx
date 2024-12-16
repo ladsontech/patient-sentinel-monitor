@@ -36,7 +36,7 @@ export function PatientCard({ patient, onClick, isSelected }: PatientCardProps) 
   return (
     <Card
       className={cn(
-        "parameter-card cursor-pointer transition-all duration-300",
+        "parameter-card cursor-pointer transition-all duration-300 max-w-sm",
         {
           "ring-2 ring-primary": isSelected,
           "normal": patient.status === "normal",
@@ -46,34 +46,34 @@ export function PatientCard({ patient, onClick, isSelected }: PatientCardProps) 
       )}
       onClick={onClick}
     >
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex justify-between items-start mb-2">
         <div>
-          <h3 className="font-semibold text-lg">{patient.name}</h3>
+          <h3 className="font-semibold text-base">{patient.name}</h3>
           <p className="patient-info">
             Room {patient.room} • {patient.ward}
           </p>
         </div>
-        <span className={cn("font-medium", getStatusColor(patient.status))}>
+        <span className={cn("font-medium text-sm", getStatusColor(patient.status))}>
           {patient.status.toUpperCase()}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-2">
         <div>
-          <p className="vital-value">{patient.vitals.bloodPressure}</p>
-          <p className="vital-label">Blood Pressure</p>
+          <p className="vital-value text-lg">{patient.vitals.bloodPressure}</p>
+          <p className="vital-label text-xs">Blood Pressure</p>
         </div>
         <div>
-          <p className="vital-value">{patient.vitals.oxygenSaturation}%</p>
-          <p className="vital-label">O2 Saturation</p>
+          <p className="vital-value text-lg">{patient.vitals.oxygenSaturation}%</p>
+          <p className="vital-label text-xs">O2 Saturation</p>
         </div>
         <div>
-          <p className="vital-value">{patient.vitals.heartRate}</p>
-          <p className="vital-label">Heart Rate</p>
+          <p className="vital-value text-lg">{patient.vitals.heartRate}</p>
+          <p className="vital-label text-xs">Heart Rate</p>
         </div>
         <div>
-          <p className="vital-value">{patient.vitals.respiratoryRate}</p>
-          <p className="vital-label">Respiratory Rate</p>
+          <p className="vital-value text-lg">{patient.vitals.respiratoryRate}</p>
+          <p className="vital-label text-xs">Respiratory Rate</p>
         </div>
       </div>
     </Card>

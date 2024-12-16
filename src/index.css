@@ -59,7 +59,7 @@
 }
 
 .parameter-card {
-  @apply relative overflow-hidden rounded-lg border p-4 transition-all duration-300 hover:shadow-lg;
+  @apply relative overflow-hidden rounded-lg border p-3 transition-all duration-300 hover:shadow-md;
 }
 
 .parameter-card.normal {
@@ -75,11 +75,11 @@
 }
 
 .vital-value {
-  @apply text-2xl font-bold tracking-tight;
+  @apply font-bold tracking-tight;
 }
 
 .vital-label {
-  @apply text-sm text-gray-500;
+  @apply text-gray-500;
 }
 
 .patient-info {
