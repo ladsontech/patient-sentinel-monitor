@@ -32,14 +32,25 @@ const fetchPatients = async (): Promise<Patient[]> => {
     .from('patients')
     .select('*');
   
-  if (error) throw error;
+  if (error) {
+    console.error('Error fetching patients:', error);
+    throw error;
+  }
+  
+  if (!patients || patients.length === 0) {
+    console.warn('No patients found');
+    return [];
+  }
   
   const { data: history, error: historyError } = await supabase
     .from('patient_history')
     .select('*')
     .order('timestamp', { ascending: true });
   
-  if (historyError) throw historyError;
+  if (historyError) {
+    console.error('Error fetching patient history:', historyError);
+    throw historyError;
+  }
 
   return (patients as Database['public']['Tables']['patients']['Row'][]).map(patient => ({
     id: patient.id,
@@ -56,7 +67,7 @@ const fetchPatients = async (): Promise<Patient[]> => {
     history: (history as Database['public']['Tables']['patient_history']['Row'][])
       .filter(h => h.patient_id === patient.id)
       .map(h => ({
-        timestamp: new Date(h.timestamp!).toLocaleTimeString(),
+        timestamp: h.timestamp ? new Date(h.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
         bloodPressure: h.blood_pressure,
         oxygenSaturation: h.oxygen_saturation,
         heartRate: h.heart_rate,
@@ -71,13 +82,15 @@ const updatePatientVitals = async () => {
       method: 'POST',
     });
     
-    if (!response.error) {
-      console.log('Vitals updated successfully');
-    } else {
+    if (response.error) {
       console.error('Error updating patient vitals:', response.error);
+      throw response.error;
     }
+    
+    return response.data;
   } catch (error) {
-    console.error('Error updating patient vitals:', error);
+    console.error('Error in updatePatientVitals:', error);
+    throw error;
   }
 };
 
@@ -85,16 +98,28 @@ const Index = () => {
   const { toast } = useToast();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  const { data: patients = [], isLoading, refetch } = useQuery({
+  const { data: patients = [], isLoading, error } = useQuery({
     queryKey: ['patients'],
     queryFn: fetchPatients,
-    refetchInterval: 1000, // Update graph data every second
+    refetchInterval: 1000,
+    retry: 3,
+    onError: (error) => {
+      console.error('Error fetching patients:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch patient data. Please try again later.",
+        variant: "destructive",
+      });
+    }
   });
 
   useEffect(() => {
-    // Update vitals every second for real-time graph updates
-    const vitalUpdateInterval = setInterval(() => {
-      updatePatientVitals();
+    const vitalUpdateInterval = setInterval(async () => {
+      try {
+        await updatePatientVitals();
+      } catch (error) {
+        console.error('Error in vital update interval:', error);
+      }
     }, 1000);
 
     return () => clearInterval(vitalUpdateInterval);
