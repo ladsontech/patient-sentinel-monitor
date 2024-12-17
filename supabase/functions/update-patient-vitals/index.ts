@@ -10,26 +10,47 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const generateAlert = async (patient: any, genAI: any) => {
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-  
-  const prompt = `As a medical professional, generate a brief, urgent medical alert message for a patient with the following vital signs:
-    - Blood Pressure: ${patient.blood_pressure} mmHg
-    - Oxygen Saturation: ${patient.oxygen_saturation}%
-    - Heart Rate: ${patient.heart_rate} BPM
-    - Respiratory Rate: ${patient.respiratory_rate} breaths/min
-    
-    Consider these thresholds for critical values:
-    - Blood Pressure: Critical if > 140 mmHg or < 90 mmHg
-    - Oxygen Saturation: Critical if < 90%
-    - Heart Rate: Critical if > 120 BPM or < 50 BPM
-    - Respiratory Rate: Critical if > 30 or < 10 breaths/min
-    
-    Focus on the most concerning vital sign and provide a concise, professional medical alert.`;
+// Keep track of last AI alert time for each patient
+const lastAlertTimes = new Map<string, number>();
+const ALERT_COOLDOWN = 60000; // 1 minute cooldown between alerts for the same patient
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text();
+const generateAlert = async (patient: any, genAI: any) => {
+  try {
+    // Check cooldown
+    const lastAlertTime = lastAlertTimes.get(patient.id);
+    const now = Date.now();
+    if (lastAlertTime && now - lastAlertTime < ALERT_COOLDOWN) {
+      console.log(`Skipping alert for patient ${patient.id} - cooldown active`);
+      return null;
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    
+    const prompt = `As a medical professional, generate a brief, urgent medical alert message for a patient with the following vital signs:
+      - Blood Pressure: ${patient.blood_pressure} mmHg
+      - Oxygen Saturation: ${patient.oxygen_saturation}%
+      - Heart Rate: ${patient.heart_rate} BPM
+      - Respiratory Rate: ${patient.respiratory_rate} breaths/min
+      
+      Consider these thresholds for critical values:
+      - Blood Pressure: Critical if > 140 mmHg or < 90 mmHg
+      - Oxygen Saturation: Critical if < 90%
+      - Heart Rate: Critical if > 120 BPM or < 50 BPM
+      - Respiratory Rate: Critical if > 30 or < 10 breaths/min
+      
+      Focus on the most concerning vital sign and provide a concise, professional medical alert.`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    
+    // Update last alert time
+    lastAlertTimes.set(patient.id, now);
+    
+    return response.text();
+  } catch (error) {
+    console.error('Error generating AI alert:', error);
+    return null; // Return null instead of throwing to allow the function to continue
+  }
 };
 
 serve(async (req) => {
@@ -82,31 +103,38 @@ serve(async (req) => {
       // Determine final status based on the actual vitals
       const status = determineStatus(newVitals);
 
-      // Generate AI alert only for critical patients
-      let aiAlert = null;
-      if (status === 'critical') {
-        aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
-        console.log('Critical patient alert:', patient.name, aiAlert);
+      try {
+        // Update patient vitals
+        await supabaseClient
+          .from('patients')
+          .update({
+            ...newVitals,
+            status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', patient.id);
+
+        // Add to history
+        await supabaseClient
+          .from('patient_history')
+          .insert({
+            patient_id: patient.id,
+            ...newVitals,
+            timestamp: new Date().toISOString()
+          });
+
+        // Generate AI alert only for critical patients and when not in cooldown
+        if (status === 'critical') {
+          const aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
+          if (aiAlert) {
+            console.log('Critical patient alert:', patient.name, aiAlert);
+          }
+        }
+      } catch (error) {
+        console.error('Error updating patient:', patient.id, error);
+        // Continue with other patients even if one fails
+        continue;
       }
-
-      // Update patient vitals
-      await supabaseClient
-        .from('patients')
-        .update({
-          ...newVitals,
-          status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', patient.id);
-
-      // Add to history
-      await supabaseClient
-        .from('patient_history')
-        .insert({
-          patient_id: patient.id,
-          ...newVitals,
-          timestamp: new Date().toISOString()
-        });
     }
 
     return new Response(
