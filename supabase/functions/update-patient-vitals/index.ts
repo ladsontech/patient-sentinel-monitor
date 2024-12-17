@@ -35,8 +35,52 @@ const VITAL_THRESHOLDS = {
   }
 };
 
+const generateVitalsForStatus = (currentVitals: any, targetStatus: 'normal' | 'warning' | 'critical') => {
+  switch (targetStatus) {
+    case 'normal':
+      return {
+        blood_pressure: Math.floor(Math.random() * (VITAL_THRESHOLDS.BLOOD_PRESSURE.NORMAL.max - VITAL_THRESHOLDS.BLOOD_PRESSURE.NORMAL.min + 1)) + VITAL_THRESHOLDS.BLOOD_PRESSURE.NORMAL.min,
+        oxygen_saturation: Math.floor(Math.random() * (VITAL_THRESHOLDS.OXYGEN_SATURATION.NORMAL.max - VITAL_THRESHOLDS.OXYGEN_SATURATION.NORMAL.min + 1)) + VITAL_THRESHOLDS.OXYGEN_SATURATION.NORMAL.min,
+        heart_rate: Math.floor(Math.random() * (VITAL_THRESHOLDS.HEART_RATE.NORMAL.max - VITAL_THRESHOLDS.HEART_RATE.NORMAL.min + 1)) + VITAL_THRESHOLDS.HEART_RATE.NORMAL.min,
+        respiratory_rate: Math.floor(Math.random() * (VITAL_THRESHOLDS.RESPIRATORY_RATE.NORMAL.max - VITAL_THRESHOLDS.RESPIRATORY_RATE.NORMAL.min + 1)) + VITAL_THRESHOLDS.RESPIRATORY_RATE.NORMAL.min
+      };
+    case 'warning':
+      return {
+        blood_pressure: Math.floor(Math.random() * (VITAL_THRESHOLDS.BLOOD_PRESSURE.WARNING.max - VITAL_THRESHOLDS.BLOOD_PRESSURE.WARNING.min + 1)) + VITAL_THRESHOLDS.BLOOD_PRESSURE.WARNING.min,
+        oxygen_saturation: Math.floor(Math.random() * (VITAL_THRESHOLDS.OXYGEN_SATURATION.WARNING.max - VITAL_THRESHOLDS.OXYGEN_SATURATION.WARNING.min + 1)) + VITAL_THRESHOLDS.OXYGEN_SATURATION.WARNING.min,
+        heart_rate: Math.floor(Math.random() * (VITAL_THRESHOLDS.HEART_RATE.WARNING.max - VITAL_THRESHOLDS.HEART_RATE.WARNING.min + 1)) + VITAL_THRESHOLDS.HEART_RATE.WARNING.min,
+        respiratory_rate: Math.floor(Math.random() * (VITAL_THRESHOLDS.RESPIRATORY_RATE.WARNING.max - VITAL_THRESHOLDS.RESPIRATORY_RATE.WARNING.min + 1)) + VITAL_THRESHOLDS.RESPIRATORY_RATE.WARNING.min
+      };
+    case 'critical':
+      // For critical, we'll randomly choose one vital sign to be critical while others remain in warning
+      const criticalVital = Math.floor(Math.random() * 4);
+      const warningVitals = generateVitalsForStatus(currentVitals, 'warning');
+      
+      switch(criticalVital) {
+        case 0:
+          warningVitals.blood_pressure = Math.random() < 0.5 ? 
+            VITAL_THRESHOLDS.BLOOD_PRESSURE.MIN - Math.floor(Math.random() * 10) :
+            VITAL_THRESHOLDS.BLOOD_PRESSURE.MAX + Math.floor(Math.random() * 10);
+          break;
+        case 1:
+          warningVitals.oxygen_saturation = VITAL_THRESHOLDS.OXYGEN_SATURATION.WARNING.min - Math.floor(Math.random() * 5);
+          break;
+        case 2:
+          warningVitals.heart_rate = Math.random() < 0.5 ?
+            VITAL_THRESHOLDS.HEART_RATE.MIN - Math.floor(Math.random() * 5) :
+            VITAL_THRESHOLDS.HEART_RATE.MAX + Math.floor(Math.random() * 20);
+          break;
+        case 3:
+          warningVitals.respiratory_rate = Math.random() < 0.5 ?
+            VITAL_THRESHOLDS.RESPIRATORY_RATE.MIN - Math.floor(Math.random() * 3) :
+            VITAL_THRESHOLDS.RESPIRATORY_RATE.MAX + Math.floor(Math.random() * 5);
+          break;
+      }
+      return warningVitals;
+  }
+};
+
 const generateRandomInRange = (min: number, max: number, current: number) => {
-  // Generate small variations (±2) from current value, but keep within overall min-max
   const variation = Math.floor(Math.random() * 5) - 2;
   const newValue = current + variation;
   return Math.max(min, Math.min(max, newValue));
@@ -112,31 +156,31 @@ serve(async (req) => {
 
     // Update each patient's vitals with realistic variations
     for (const patient of patients) {
-      // Generate controlled random variations within medical ranges
-      const newVitals = {
-        blood_pressure: generateRandomInRange(
-          VITAL_THRESHOLDS.BLOOD_PRESSURE.MIN,
-          VITAL_THRESHOLDS.BLOOD_PRESSURE.MAX,
-          patient.blood_pressure
-        ),
-        oxygen_saturation: generateRandomInRange(
-          VITAL_THRESHOLDS.OXYGEN_SATURATION.MIN,
-          VITAL_THRESHOLDS.OXYGEN_SATURATION.MAX,
-          patient.oxygen_saturation
-        ),
-        heart_rate: generateRandomInRange(
-          VITAL_THRESHOLDS.HEART_RATE.MIN,
-          VITAL_THRESHOLDS.HEART_RATE.MAX,
-          patient.heart_rate
-        ),
-        respiratory_rate: generateRandomInRange(
-          VITAL_THRESHOLDS.RESPIRATORY_RATE.MIN,
-          VITAL_THRESHOLDS.RESPIRATORY_RATE.MAX,
-          patient.respiratory_rate
-        )
-      };
+      // Determine a random status with weighted probabilities
+      const rand = Math.random();
+      let targetStatus: 'normal' | 'warning' | 'critical';
+      
+      if (rand < 0.6) { // 60% chance of normal
+        targetStatus = 'normal';
+      } else if (rand < 0.85) { // 25% chance of warning
+        targetStatus = 'warning';
+      } else { // 15% chance of critical
+        targetStatus = 'critical';
+      }
 
-      // Determine status based on medical thresholds
+      // Generate new vitals based on the target status
+      const newVitals = generateVitalsForStatus(patient, targetStatus);
+
+      // Add small random variations to make changes more natural
+      Object.keys(newVitals).forEach(key => {
+        newVitals[key] = generateRandomInRange(
+          VITAL_THRESHOLDS[key.toUpperCase()].MIN,
+          VITAL_THRESHOLDS[key.toUpperCase()].MAX,
+          newVitals[key]
+        );
+      });
+
+      // Determine final status based on the actual vitals
       const status = determineStatus(newVitals);
 
       // Generate AI alert only for critical patients
