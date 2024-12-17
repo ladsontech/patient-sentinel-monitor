@@ -10,8 +10,8 @@ const corsHeaders = {
 // Medical thresholds based on standard hospital parameters
 const VITAL_THRESHOLDS = {
   BLOOD_PRESSURE: {
-    NORMAL: { min: 90, max: 120 }, // Systolic
-    WARNING: { min: 120, max: 140 },
+    NORMAL: { min: 90, max: 120 },
+    WARNING: { min: 121, max: 139 },
     CRITICAL: { min: 140, max: 180 }
   },
   OXYGEN_SATURATION: {
@@ -22,12 +22,12 @@ const VITAL_THRESHOLDS = {
   HEART_RATE: {
     NORMAL: { min: 60, max: 100 },
     WARNING: { min: 101, max: 120 },
-    CRITICAL: { min: 121, max: 140 }
+    CRITICAL: { min: 50, max: 140 }
   },
   RESPIRATORY_RATE: {
     NORMAL: { min: 12, max: 20 },
-    WARNING: { min: 21, max: 24 },
-    CRITICAL: { min: 25, max: 30 }
+    WARNING: { min: 21, max: 30 },
+    CRITICAL: { min: 10, max: 35 }
   }
 };
 
@@ -35,16 +35,16 @@ const generateAlert = async (patient: any, genAI: any) => {
   const model = genAI.getGenerativeModel({ model: "gemini-pro" });
   
   const prompt = `As a medical professional, generate a brief, urgent medical alert message for a patient with the following vital signs:
-    - Blood Pressure: ${patient.blood_pressure} mmHg (systolic)
+    - Blood Pressure: ${patient.blood_pressure} mmHg
     - Oxygen Saturation: ${patient.oxygen_saturation}%
-    - Heart Rate: ${patient.heart_rate} bpm
+    - Heart Rate: ${patient.heart_rate} BPM
     - Respiratory Rate: ${patient.respiratory_rate} breaths/min
     
     Consider these thresholds for critical values:
-    - Blood Pressure > 140 mmHg
-    - Oxygen Saturation < 90%
-    - Heart Rate > 120 bpm
-    - Respiratory Rate > 24 breaths/min
+    - Blood Pressure: Critical if > 140 mmHg or < 90 mmHg
+    - Oxygen Saturation: Critical if < 90%
+    - Heart Rate: Critical if > 120 BPM or < 50 BPM
+    - Respiratory Rate: Critical if > 30 or < 10 breaths/min
     
     Focus on the most concerning vital sign and provide a concise, professional medical alert.`;
 
@@ -59,16 +59,19 @@ const determineStatus = (vitals: any) => {
   // Check each vital sign against thresholds
   if (
     vitals.blood_pressure >= VITAL_THRESHOLDS.BLOOD_PRESSURE.CRITICAL.min ||
-    vitals.oxygen_saturation <= VITAL_THRESHOLDS.OXYGEN_SATURATION.CRITICAL.max ||
-    vitals.heart_rate >= VITAL_THRESHOLDS.HEART_RATE.CRITICAL.min ||
-    vitals.respiratory_rate >= VITAL_THRESHOLDS.RESPIRATORY_RATE.CRITICAL.min
+    vitals.blood_pressure <= 90 ||
+    vitals.oxygen_saturation <= 90 ||
+    vitals.heart_rate >= VITAL_THRESHOLDS.HEART_RATE.CRITICAL.max ||
+    vitals.heart_rate <= VITAL_THRESHOLDS.HEART_RATE.CRITICAL.min ||
+    vitals.respiratory_rate >= 30 ||
+    vitals.respiratory_rate <= 10
   ) {
     status = 'critical';
   } else if (
-    vitals.blood_pressure >= VITAL_THRESHOLDS.BLOOD_PRESSURE.WARNING.min ||
-    vitals.oxygen_saturation <= VITAL_THRESHOLDS.OXYGEN_SATURATION.WARNING.max ||
-    vitals.heart_rate >= VITAL_THRESHOLDS.HEART_RATE.WARNING.min ||
-    vitals.respiratory_rate >= VITAL_THRESHOLDS.RESPIRATORY_RATE.WARNING.min
+    (vitals.blood_pressure >= VITAL_THRESHOLDS.BLOOD_PRESSURE.WARNING.min && vitals.blood_pressure < VITAL_THRESHOLDS.BLOOD_PRESSURE.CRITICAL.min) ||
+    (vitals.oxygen_saturation >= 90 && vitals.oxygen_saturation <= 94) ||
+    (vitals.heart_rate >= VITAL_THRESHOLDS.HEART_RATE.WARNING.min && vitals.heart_rate < VITAL_THRESHOLDS.HEART_RATE.WARNING.max) ||
+    (vitals.respiratory_rate >= 21 && vitals.respiratory_rate <= 30)
   ) {
     status = 'warning';
   }
@@ -98,11 +101,12 @@ serve(async (req) => {
 
     // Update each patient's vitals with realistic variations
     for (const patient of patients) {
+      // Generate more controlled random variations within medical ranges
       const newVitals = {
-        blood_pressure: Math.max(80, Math.min(180, patient.blood_pressure + Math.floor(Math.random() * 10 - 5))),
-        oxygen_saturation: Math.max(85, Math.min(100, patient.oxygen_saturation + Math.floor(Math.random() * 4 - 2))),
-        heart_rate: Math.max(50, Math.min(140, patient.heart_rate + Math.floor(Math.random() * 8 - 4))),
-        respiratory_rate: Math.max(10, Math.min(30, patient.respiratory_rate + Math.floor(Math.random() * 4 - 2)))
+        blood_pressure: Math.max(80, Math.min(180, patient.blood_pressure + Math.floor(Math.random() * 6 - 3))),
+        oxygen_saturation: Math.max(85, Math.min(100, patient.oxygen_saturation + Math.floor(Math.random() * 3 - 1))),
+        heart_rate: Math.max(45, Math.min(150, patient.heart_rate + Math.floor(Math.random() * 6 - 3))),
+        respiratory_rate: Math.max(8, Math.min(35, patient.respiratory_rate + Math.floor(Math.random() * 3 - 1)))
       };
 
       // Determine status based on medical thresholds
