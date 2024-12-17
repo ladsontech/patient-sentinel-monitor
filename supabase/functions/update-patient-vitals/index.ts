@@ -7,19 +7,73 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Medical thresholds based on standard hospital parameters
+const VITAL_THRESHOLDS = {
+  BLOOD_PRESSURE: {
+    NORMAL: { min: 90, max: 120 }, // Systolic
+    WARNING: { min: 120, max: 140 },
+    CRITICAL: { min: 140, max: 180 }
+  },
+  OXYGEN_SATURATION: {
+    NORMAL: { min: 95, max: 100 },
+    WARNING: { min: 90, max: 94 },
+    CRITICAL: { min: 85, max: 89 }
+  },
+  HEART_RATE: {
+    NORMAL: { min: 60, max: 100 },
+    WARNING: { min: 101, max: 120 },
+    CRITICAL: { min: 121, max: 140 }
+  },
+  RESPIRATORY_RATE: {
+    NORMAL: { min: 12, max: 20 },
+    WARNING: { min: 21, max: 24 },
+    CRITICAL: { min: 25, max: 30 }
+  }
+};
+
 const generateAlert = async (patient: any, genAI: any) => {
   const model = genAI.getGenerativeModel({ model: "gemini-pro" });
   
-  const prompt = `Generate a brief, urgent medical alert message for a patient with the following vital signs:
-    - Blood Pressure: ${patient.blood_pressure}
+  const prompt = `As a medical professional, generate a brief, urgent medical alert message for a patient with the following vital signs:
+    - Blood Pressure: ${patient.blood_pressure} mmHg (systolic)
     - Oxygen Saturation: ${patient.oxygen_saturation}%
     - Heart Rate: ${patient.heart_rate} bpm
-    - Respiratory Rate: ${patient.respiratory_rate}
-    Keep it professional and concise, focusing on the most concerning vital sign.`;
+    - Respiratory Rate: ${patient.respiratory_rate} breaths/min
+    
+    Consider these thresholds for critical values:
+    - Blood Pressure > 140 mmHg
+    - Oxygen Saturation < 90%
+    - Heart Rate > 120 bpm
+    - Respiratory Rate > 24 breaths/min
+    
+    Focus on the most concerning vital sign and provide a concise, professional medical alert.`;
 
   const result = await model.generateContent(prompt);
   const response = await result.response;
   return response.text();
+};
+
+const determineStatus = (vitals: any) => {
+  let status = 'normal';
+  
+  // Check each vital sign against thresholds
+  if (
+    vitals.blood_pressure >= VITAL_THRESHOLDS.BLOOD_PRESSURE.CRITICAL.min ||
+    vitals.oxygen_saturation <= VITAL_THRESHOLDS.OXYGEN_SATURATION.CRITICAL.max ||
+    vitals.heart_rate >= VITAL_THRESHOLDS.HEART_RATE.CRITICAL.min ||
+    vitals.respiratory_rate >= VITAL_THRESHOLDS.RESPIRATORY_RATE.CRITICAL.min
+  ) {
+    status = 'critical';
+  } else if (
+    vitals.blood_pressure >= VITAL_THRESHOLDS.BLOOD_PRESSURE.WARNING.min ||
+    vitals.oxygen_saturation <= VITAL_THRESHOLDS.OXYGEN_SATURATION.WARNING.max ||
+    vitals.heart_rate >= VITAL_THRESHOLDS.HEART_RATE.WARNING.min ||
+    vitals.respiratory_rate >= VITAL_THRESHOLDS.RESPIRATORY_RATE.WARNING.min
+  ) {
+    status = 'warning';
+  }
+  
+  return status;
 };
 
 serve(async (req) => {
@@ -42,27 +96,23 @@ serve(async (req) => {
     
     if (patientsError) throw patientsError;
 
-    // Update each patient's vitals with variations
+    // Update each patient's vitals with realistic variations
     for (const patient of patients) {
       const newVitals = {
-        blood_pressure: patient.blood_pressure + Math.floor(Math.random() * 20 - 10),
-        oxygen_saturation: Math.min(100, Math.max(85, patient.oxygen_saturation + Math.floor(Math.random() * 8 - 4))),
-        heart_rate: patient.heart_rate + Math.floor(Math.random() * 16 - 8),
-        respiratory_rate: patient.respiratory_rate + Math.floor(Math.random() * 8 - 4)
+        blood_pressure: Math.max(80, Math.min(180, patient.blood_pressure + Math.floor(Math.random() * 10 - 5))),
+        oxygen_saturation: Math.max(85, Math.min(100, patient.oxygen_saturation + Math.floor(Math.random() * 4 - 2))),
+        heart_rate: Math.max(50, Math.min(140, patient.heart_rate + Math.floor(Math.random() * 8 - 4))),
+        respiratory_rate: Math.max(10, Math.min(30, patient.respiratory_rate + Math.floor(Math.random() * 4 - 2)))
       };
 
-      // Determine status based on vital signs
-      let status = 'normal';
-      if (newVitals.oxygen_saturation < 90 || newVitals.heart_rate > 100 || newVitals.blood_pressure > 160) {
-        status = 'critical';
-      } else if (newVitals.oxygen_saturation < 94 || newVitals.heart_rate > 90 || newVitals.blood_pressure > 140) {
-        status = 'warning';
-      }
+      // Determine status based on medical thresholds
+      const status = determineStatus(newVitals);
 
-      // If status is critical, generate AI alert
+      // Generate AI alert only for critical patients
       let aiAlert = null;
       if (status === 'critical') {
         aiAlert = await generateAlert({ ...patient, ...newVitals }, genAI);
+        console.log('Critical patient alert:', patient.name, aiAlert);
       }
 
       // Update patient vitals
@@ -70,7 +120,7 @@ serve(async (req) => {
         .from('patients')
         .update({
           ...newVitals,
-          status: status,
+          status,
           updated_at: new Date().toISOString()
         })
         .eq('id', patient.id);
@@ -81,11 +131,8 @@ serve(async (req) => {
         .insert({
           patient_id: patient.id,
           ...newVitals,
+          timestamp: new Date().toISOString()
         });
-
-      if (aiAlert) {
-        console.log('AI Alert for patient', patient.name, ':', aiAlert);
-      }
     }
 
     return new Response(
