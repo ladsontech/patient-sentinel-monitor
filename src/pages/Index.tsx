@@ -67,16 +67,14 @@ const fetchPatients = async (): Promise<Patient[]> => {
 
 const updatePatientVitals = async () => {
   try {
-    const response = await fetch('https://nazymgzhnjfpxjdsscml.supabase.co/functions/v1/update-patient-vitals', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
-      }
+    const response = await supabase.functions.invoke('update-patient-vitals', {
+      method: 'POST'
     });
     
-    if (!response.ok) {
-      throw new Error('Failed to update patient vitals');
+    if (!response.error) {
+      console.log('Successfully updated patient vitals');
+    } else {
+      console.error('Error updating patient vitals:', response.error);
     }
   } catch (error) {
     console.error('Error updating patient vitals:', error);
